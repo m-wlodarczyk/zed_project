@@ -1,0 +1,20 @@
+---
+title: "analiza_covid"
+author: "Michał Włodarczyk"
+date: "11/18/2020"
+output: html_document
+---
+
+```{r libraries, message=FALSE}
+library(readxl)
+library(httr)
+library(tidyverse)
+```
+
+```{r data_download}
+url <- "http://www.cs.put.poznan.pl/dbrzezinski/teaching/zed/wuhan_blood_sample_data_Jan_Feb_2020.xlsx"
+GET(url, write_disk(data_file <- tempfile(fileext = ".xlsx")))
+df <- read_excel(data_file) %>% fill(PATIENT_ID)
+head(df)
+tail(df)
+```
