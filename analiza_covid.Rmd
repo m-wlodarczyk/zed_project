@@ -5,16 +5,43 @@ date: "11/18/2020"
 output: html_document
 ---
 
+
+### Biblioteki
 ```{r libraries, message=FALSE}
 library(readxl)
 library(httr)
 library(tidyverse)
+library(janitor)
 ```
 
-```{r data_download}
+
+### Pobieranie danych
+```{r data_download, results='hide'}
 url <- "http://www.cs.put.poznan.pl/dbrzezinski/teaching/zed/wuhan_blood_sample_data_Jan_Feb_2020.xlsx"
 GET(url, write_disk(data_file <- tempfile(fileext = ".xlsx")))
 df <- read_excel(data_file) %>% fill(PATIENT_ID)
-head(df)
-tail(df)
 ```
+
+
+### Opis zbioru danych
+
+```{r data_description}
+```
+
+```{r age_group}
+patients <- distinct(df %>% select(PATIENT_ID, age, gender, outcome))
+patients$ageGroup <- cut(patients$age, seq(10, 100, by=10))
+order(patients$ageGroup)
+```
+
+```{r mortality_rate_by_age}
+mortality_by_age = tabyl(patients, ageGroup, outcome) %>% adorn_percentages("row") %>% adorn_pct_formatting(digits = 1)
+```
+
+
+
+#### Atrybuty zbioru danych:
+ * PATIENT ID - {1:375}
+ * age - min = 18, max = 95
+ * gender - {1:2}, not specified which number represents which gender
+ * outcome - {0:1}, where 0 means recovery and 1 means fatality
