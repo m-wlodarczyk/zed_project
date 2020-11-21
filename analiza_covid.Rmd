@@ -6,10 +6,12 @@ output: html_document
 ---
 
 
-### Biblioteki
+### Wykorzystane biblioteki
 ```{r libraries, message=FALSE}
 library(readxl)
 library(httr)
+library(knitr)
+library(plyr)
 library(tidyverse)
 library(janitor)
 ```
@@ -19,29 +21,56 @@ library(janitor)
 ```{r data_download, results='hide'}
 url <- "http://www.cs.put.poznan.pl/dbrzezinski/teaching/zed/wuhan_blood_sample_data_Jan_Feb_2020.xlsx"
 GET(url, write_disk(data_file <- tempfile(fileext = ".xlsx")))
-df <- read_excel(data_file) %>% fill(PATIENT_ID)
+raw_df <- read_excel(data_file) 
 ```
 
+
+### Czyszczenie/modyfikacja danych
+```{r data_cleanup}
+df <- raw_df %>% 
+  rename(c(patient=PATIENT_ID, release_date=RE_DATE, survived=outcome)) %>% 
+  fill(patient) %>% 
+  mutate(survived = ifelse(survived == 0, "yes", "no")) %>%
+  mutate(gender = ifelse(gender == 1, "male", "female"))
+```
 
 ### Opis zbioru danych
 
 ```{r data_description}
+
 ```
 
-```{r age_group}
-patients <- distinct(df %>% select(PATIENT_ID, age, gender, outcome))
+```{r patients}
+patients <- distinct(df %>% select(patient, age, gender, survived))
 patients$ageGroup <- cut(patients$age, seq(10, 100, by=10))
-order(patients$ageGroup)
 ```
 
-```{r mortality_rate_by_age}
-mortality_by_age = tabyl(patients, ageGroup, outcome) %>% adorn_percentages("row") %>% adorn_pct_formatting(digits = 1)
+```{r survived_graph}
+ggplot(patients, aes(x=ageGroup, fill=survived)) + 
+  stat_count(width = 0.5) + 
+  theme_bw() +
+  labs(
+    title = "Wykres przeżywalności z podziałem na grupy wiekowe",
+    y = "Liczba pacjentów",
+    x = "Grupy wiekowe",
+    fill = "Survived"
+    )
 ```
 
+
+Tabela z procentowo wyrażoną śmiertelnością w zależności od grupy wiekowej
+```{r mortality_rate_by_age, echo=FALSE}
+mortality_by_age = tabyl(patients, survived, ageGroup) %>%
+  rowwise() %>% 
+  mutate(All = sum(c_across(2:10))) %>%
+  adorn_percentages("col") %>%
+  adorn_pct_formatting(digits = 2)
+kable(mortality_by_age)
+```
 
 
 #### Atrybuty zbioru danych:
  * PATIENT ID - {1:375}
  * age - min = 18, max = 95
- * gender - {1:2}, not specified which number represents which gender
+ * gender - 1 = male, 2 = female
  * outcome - {0:1}, where 0 means recovery and 1 means fatality
