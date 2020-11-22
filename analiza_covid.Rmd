@@ -6,7 +6,7 @@ output: html_document
 ---
 
 
-### Wykorzystane biblioteki
+# Wykorzystane biblioteki
 ```{r libraries, message=FALSE}
 library(readxl)
 library(httr)
@@ -17,7 +17,7 @@ library(janitor)
 ```
 
 
-### Pobieranie danych
+# Wczytywanie danych
 ```{r data_download, results='hide'}
 url <- "http://www.cs.put.poznan.pl/dbrzezinski/teaching/zed/wuhan_blood_sample_data_Jan_Feb_2020.xlsx"
 GET(url, write_disk(data_file <- tempfile(fileext = ".xlsx")))
@@ -25,35 +25,58 @@ raw_df <- read_excel(data_file)
 ```
 
 
-### Czyszczenie/modyfikacja danych
-```{r data_cleanup}
+# Przetważanie zbioru danych
+```{r data_cleanup, echo=FALSE}
 df <- raw_df %>% 
-  rename(c(patient=PATIENT_ID, release_date=RE_DATE, survived=outcome)) %>% 
-  fill(patient) %>% 
+  rename(
+    c(
+      patient_id=PATIENT_ID, 
+      release_date=RE_DATE, 
+      admission_date="Admission time",
+      discharge_date="Discharge time", 
+      survived=outcome)
+    ) %>% 
+  fill(patient_id) %>% 
   mutate(survived = ifelse(survived == 0, "yes", "no")) %>%
   mutate(gender = ifelse(gender == 1, "male", "female"))
 ```
 
-### Opis zbioru danych
+## Rozmiar danych
+Zbiór danych składa sie z `r nrow(raw_df)` rekordów medycznych opisywanych przez `r ncol(raw_df)` atrybutów, z których pierwsze 7 odnosi się bezpośrednio do samego pacjenta (np. jego identyfikator, data przyjecia do szpitala, wiek, ...), a pozostałe `r ncol(raw_df)-7`. atrybuty zawierają informacje o wynikach przeprowadzonych badań.
 
-```{r data_description}
 
-```
-
-```{r patients}
-patients <- distinct(df %>% select(patient, age, gender, survived))
+## Pacjenci
+```{r patients, echo=FALSE}
+patients <- distinct(
+  df %>%
+    select(patient_id, age, gender, admission_date, discharge_date, survived)) %>%
+  mutate(treatment_time = as.numeric(discharge_date-admission_date))
 patients$ageGroup <- cut(patients$age, seq(10, 100, by=10))
 ```
 
-```{r survived_graph}
-ggplot(patients, aes(x=ageGroup, fill=survived)) + 
-  stat_count(width = 0.5) + 
-  theme_bw() +
+
+Zbiór danych zawiera informacje o `r nrow(patients)` pacjentach, u których stwierdzono obecność choroby COVID-19. Dane zostały zebrane na przestrzeni od `r as.Date(min(patients$admission_date))` do `r as.Date(max(patients$discharge_date))`.
+
+Atrybuty użyte do opisu pacjentów:
+
+* PATIENT_ID - unikalny identyfikator przypisany do każdego pacjenta
+* RE_DATE - pole, którego znaczenie w dokumentacji zbioru nie jest jednoznacznie opisane, ale na podstawie pozostałych atrybutów zbioru można wyprowadzić, że jest to data wykonania badania
+* age - wiek pacjenta
+* gender - płeć pacjenta, przyjmuje wartości 1 lub 2, gdzie 1 oznacza mężczyznę, a 2 kobietę. Przypisane wartości do płci nie było jawnie udokumentowane, natomiast poprawną identyfikację umożliwiały dopiero opublikowane statystyki zbioru.
+* Admission time - data przyjęcia pacjenta do szpitala.
+* Discharge time - data wypisania pacjenta ze szpitala w przypadku ozdrowienia lub data śmierci.
+* outcome - wynik przebytej przez pacjenta choroby, przyjmuje wartości 0 lub 1, gdzie 0 oznacza wyleczenie, a 1 - śmierć. Przypisanie odpowiedniego wyniku do wartości atrybutu było możlwie dzięki dostępnym statystykom zbioru, podobnie jak w przypadku atrybutu 'gender'.
+
+```{r survived_graph, echo=FALSE}
+ggplot(data=patients, mapping=aes(x=ageGroup, fill=survived)) + 
+  geom_bar(width=.5, position=position_dodge(width=.6), mapping=aes(group=survived)) +
+  geom_text(stat='count', aes(label=..count..), position=position_dodge(width=0.6), vjust=-0.15) +
+  theme_bw() + 
   labs(
-    title = "Wykres przeżywalności z podziałem na grupy wiekowe",
-    y = "Liczba pacjentów",
-    x = "Grupy wiekowe",
-    fill = "Survived"
+    title="Wykres przeżywalności z podziałem na grupy wiekowe",
+    y="Liczba pacjentów",
+    x="Grupy wiekowe",
+    fill="Survived"
     )
 ```
 
