@@ -12,8 +12,10 @@ library(readxl)
 library(httr)
 library(knitr)
 library(plyr)
+library(gridExtra)
 library(tidyverse)
 library(janitor)
+library(scales)
 ```
 
 
@@ -42,7 +44,7 @@ df <- raw_df %>%
 ```
 
 ## Rozmiar danych
-Zbiór danych składa sie z `r nrow(raw_df)` rekordów medycznych opisywanych przez `r ncol(raw_df)` atrybutów, z których pierwsze 7 odnosi się bezpośrednio do samego pacjenta (np. jego identyfikator, data przyjecia do szpitala, wiek, ...), a pozostałe `r ncol(raw_df)-7`. atrybuty zawierają informacje o wynikach przeprowadzonych badań.
+Zbiór danych składa sie z `r nrow(raw_df)` rekordów medycznych opisywanych przez `r ncol(raw_df)` atrybutów, z których pierwsze 7 odnosi się bezpośrednio do samego pacjenta (np. jego identyfikator, data przyjecia do szpitala, wiek, ...), a pozostałe `r ncol(raw_df)-7` atrybuty zawierają informacje o wynikach przeprowadzonych badań.
 
 
 ## Pacjenci
@@ -57,7 +59,7 @@ patients$ageGroup <- cut(patients$age, seq(10, 100, by=10))
 
 Zbiór danych zawiera informacje o `r nrow(patients)` pacjentach, u których stwierdzono obecność choroby COVID-19. Dane zostały zebrane na przestrzeni od `r as.Date(min(patients$admission_date))` do `r as.Date(max(patients$discharge_date))`.
 
-Atrybuty użyte do opisu pacjentów:
+### Atrybuty użyte do opisu pacjentów
 
 * PATIENT_ID - unikalny identyfikator przypisany do każdego pacjenta
 * RE_DATE - pole, którego znaczenie w dokumentacji zbioru nie jest jednoznacznie opisane, ale na podstawie pozostałych atrybutów zbioru można wyprowadzić, że jest to data wykonania badania
@@ -67,33 +69,96 @@ Atrybuty użyte do opisu pacjentów:
 * Discharge time - data wypisania pacjenta ze szpitala w przypadku ozdrowienia lub data śmierci.
 * outcome - wynik przebytej przez pacjenta choroby, przyjmuje wartości 0 lub 1, gdzie 0 oznacza wyleczenie, a 1 - śmierć. Przypisanie odpowiedniego wyniku do wartości atrybutu było możlwie dzięki dostępnym statystykom zbioru, podobnie jak w przypadku atrybutu 'gender'.
 
-```{r survived_graph, echo=FALSE}
-ggplot(data=patients, mapping=aes(x=ageGroup, fill=survived)) + 
-  geom_bar(width=.5, position=position_dodge(width=.6), mapping=aes(group=survived)) +
-  geom_text(stat='count', aes(label=..count..), position=position_dodge(width=0.6), vjust=-0.15) +
-  theme_bw() + 
+### Dane demograficzne pacjentów
+
+```{r demographics, echo=FALSE, warning=FALSE}
+ageGroupCount <- tabyl(patients, ageGroup) %>% 
+  select(ageGroup, n) 
+ageGroupCount <- ageGroupCount %>%  
+  arrange(desc(ageGroup)) %>%
+  mutate(prop=n/sum(ageGroupCount$n)*100) %>%
+  mutate(ypos=ifelse(n >= 20, cumsum(prop)-0.5*prop, NA)) %>%
+  mutate(desc = paste(ageGroup, percent(prop/100), sep=" - "))
+
+genderCount <- tabyl(patients, gender) %>%
+  select(gender, n)
+genderCount <- genderCount %>%
+  arrange(desc(gender)) %>%
+  mutate(prop=n/sum(genderCount$n)*100) %>%
+  mutate(ypos=cumsum(prop)-0.5*prop) %>%
+  mutate(desc = paste(gender, percent(prop/100), sep=" - "))
+
+
+ageDemographics <- ggplot(ageGroupCount, aes(x="", y=prop, fill=desc)) +
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) + 
+  theme_void() + 
+  geom_text(aes(y = ypos, label = n), color = "white", size=3) + 
   labs(
-    title="Wykres przeżywalności z podziałem na grupy wiekowe",
-    y="Liczba pacjentów",
-    x="Grupy wiekowe",
-    fill="Survived"
+    title="Struktura plci pacjentów",
+    fill="Grupa wiekowa"
+  )
+
+
+genderDemographics <- ggplot(genderCount, aes(x="", y=prop, fill=desc)) +
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void() +
+  geom_text(aes(y = ypos, label = n), color = "white", size=6) +
+  labs(
+    title="Struktura wieku pacjentów",
+    fill="Plec"
     )
 ```
 
+Wśród pacjentów najliczniejszą grupę pod względem płci stanowią `r ifelse(genderCount[which.max(genderCount$n), 1] == "male", "mężczyźni", "kobiety")` - `r genderCount[which.max(genderCount$n), 2]` pacjentów (`r percent(genderCount[which.max(genderCount$n), 3]/100)`). 
 
-Tabela z procentowo wyrażoną śmiertelnością w zależności od grupy wiekowej
+Do danych o pacjentach dodany został nowy atrybut wyliczeniowy - `ageGroup` przypisujący pacjentów do dziesięcioletnich grup wiekowych, powstały na podstawie podziału atrybutu numerycznego - `age`. 
+Najliczniejszą grupą wiekową wśród pacjentów jest `r ageGroupCount[which.max(ageGroupCount$n), 1]` - `r ageGroupCount[which.max(ageGroupCount$n), 2]` pacjentów (`r percent(ageGroupCount[which.max(ageGroupCount$n), 3]/100)`), natomiast najmniej liczną grupą jest `r ageGroupCount[which.min(ageGroupCount$n), 1]` - `r ageGroupCount[which.min(ageGroupCount$n), 2]` pacjentów (`r percent(ageGroupCount[which.min(ageGroupCount$n), 3]/100)`).
+
+Pełne statystyki dotyczące demografii pacjentów przedstawione są na wykresach kołowych poniżej:
+
+```{r, echo=FALSE, warning=FALSE, fig.align='center'}
+# TODO generowanie dwóch wykresów obok siebie w linii
+ageDemographics
+genderDemographics
+```
+
+
+### Śmiertelność
+
 ```{r mortality_rate_by_age, echo=FALSE}
 mortality_by_age = tabyl(patients, survived, ageGroup) %>%
   rowwise() %>% 
   mutate(All = sum(c_across(2:10))) %>%
   adorn_percentages("col") %>%
-  adorn_pct_formatting(digits = 2)
-kable(mortality_by_age)
+  arrange(desc(All))
+
+maxMortality <- apply(select(mortality_by_age, c(2:10)), 1, FUN=max)[2]
+maxMortalityAgeGroup <- colnames(mortality_by_age)[apply(mortality_by_age[2, ], 1, function(i) which(i == maxMortality))]
+minMortalityAgeGroup <- colnames(mortality_by_age)[apply(mortality_by_age[2, ], 1, function(i) which(i == 0))]
 ```
 
+Bezwględna śmiertelność pacjentów ze zbioru danych wyniosła `r percent(mortality_by_age$All[2])`. 
 
-#### Atrybuty zbioru danych:
- * PATIENT ID - {1:375}
- * age - min = 18, max = 95
- * gender - 1 = male, 2 = female
- * outcome - {0:1}, where 0 means recovery and 1 means fatality
+Tabela z procentowo wyrażoną śmiertelnością w zależności od grupy wiekowej
+```{r mortality_rate_table, echo=FALSE}
+kable(mortality_by_age %>% adorn_pct_formatting(digits = 2))
+```
+
+Najbardziej narażeni byli pacjenci z grupy wiekowej `r maxMortalityAgeGroup`, których śmiertelność wyniosła `r percent(maxMortality)`, ale jest to również jedna z najmniej licznych grup pacjentów. 
+
+Najmniej narażoną grupą byli pacjenci w wieku `r minMortalityAgeGroup`, u których nie zanotowano przypadków śmiertelnych.
+
+```{r survived_graph, echo=FALSE, fig.align='center'}
+ggplot(data=patients, mapping=aes(x=ageGroup, fill=survived)) + 
+  geom_bar(width=.5, position=position_dodge(width=.6), mapping=aes(group=survived)) +
+  geom_text(stat='count', aes(label=..count..), position=position_dodge(width=0.6), vjust=-0.15) +
+  theme_bw() + 
+  labs(
+    title="Wykaz rezultatów choroby pacjentów z podziałem na grupy wiekowe",
+    y="Liczba pacjentów",
+    x="Grupy wiekowe",
+    fill="Survived"
+    )
+```
