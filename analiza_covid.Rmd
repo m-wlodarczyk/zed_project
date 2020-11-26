@@ -35,7 +35,7 @@ raw_df <- read_excel(data_file)
 ```
 
 
-# Przetważanie zbioru danych
+# Przetwarzanie zbioru danych
 ```{r data_cleanup, echo=FALSE}
 df <- raw_df %>% 
   rename(
@@ -54,7 +54,7 @@ df <- raw_df %>%
 ## Czyszczenie zbioru danych
 
 ## Rozmiar danych
-Zbiór danych składa sie z `r nrow(raw_df)` rekordów medycznych opisywanych przez `r ncol(raw_df)` atrybutów, z których pierwsze 7 odnosi się bezpośrednio do samego pacjenta (np. jego identyfikator, data przyjecia do szpitala, wiek, ...), a pozostałe `r ncol(raw_df)-7` atrybuty zawierają informacje o wynikach przeprowadzonych badań.
+Zbiór danych składa się z `r nrow(raw_df)` rekordów medycznych opisywanych przez `r ncol(raw_df)` atrybutów, z których pierwsze 7 odnosi się bezpośrednio do samego pacjenta (jego identyfikator, data przyjęcia do szpitala, wiek, ...), a pozostałe `r ncol(raw_df)-7` atrybuty zawierają informacje o wynikach przeprowadzonych badań.
 
 
 ## Pacjenci
@@ -62,7 +62,7 @@ Zbiór danych składa sie z `r nrow(raw_df)` rekordów medycznych opisywanych pr
 patients <- distinct(
   df %>%
     select(patient_id, age, gender, admission_date, discharge_date, survived)) %>%
-  mutate(treatment_duration = as.numeric(discharge_date-admission_date))
+  mutate(treatment_duration_hours=as.numeric(discharge_date-admission_date), treatment_duration_days=round(difftime(discharge_date, admission_date, units="days"), digits=0))
 patients$age_group <- cut(patients$age, seq(10, 100, by=10))
 ```
 
@@ -122,7 +122,7 @@ gender_demographics <- ggplot(gender_count, aes(x="", y=prop, fill=desc)) +
     )
 ```
 
-Wśród pacjentów najliczniejszą grupę pod względem płci stanowią `r ifelse(gender_count[which.max(gender_count$n), 1] == "male", "mężczyźni", "kobiety")` - `r gender_count[which.max(gender_count$n), 2]` pacjentów (`r percent_format(accuracy = 0.1L)(gender_count[which.max(gender_count$n), 3]/100)`). 
+Wśród pacjentów najliczniejszą grupę pod względem płci stanowią `r ifelse(gender_count[which.max(gender_count$n), 1] == "male", "mężczyźni", "kobiety")` - `r gender_count[which.max(gender_count$n), 2]` pacjentów (`r percent_format(accuracy = 0.1)(gender_count[which.max(gender_count$n), 3]/100)`). 
 
 Średnia wieku pacjentów wynosi `r round(mean(patients$age), digits=2)`, pełne informacje o rozkładzie wieku pacjetnów dostępne są w tabeli poniżej.
 ```{r age_demographics_table, echo=FALSE}
@@ -134,7 +134,7 @@ data.frame("Min"=as.character(min(patients$age)),
   kable_styling("bordered", full_width = F)
 ```
 Dodatkowo do danych o pacjentach dodany został nowy atrybut wyliczeniowy - `age_group` przypisujący pacjentów do dziesięcioletnich grup wiekowych, powstały na podstawie podziału atrybutu numerycznego - `age`. 
-Najliczniejszą grupą wiekową wśród pacjentów jest `r age_group_count[which.max(age_group_count$n), 1]` - `r age_group_count[which.max(age_group_count$n), 2]` pacjentów (`r percent_format(accuracy = 0.1L)(age_group_count[which.max(age_group_count$n), 3]/100)`), natomiast najmniej liczną grupą jest `r age_group_count[which.min(age_group_count$n), 1]` - `r age_group_count[which.min(age_group_count$n), 2]` pacjentów (`r percent_format(accuracy = 0.1L)(age_group_count[which.min(age_group_count$n), 3]/100)`).
+Najliczniejszą grupą wiekową wśród pacjentów jest `r age_group_count[which.max(age_group_count$n), 1]` - `r age_group_count[which.max(age_group_count$n), 2]` pacjentów (`r percent_format(accuracy = 0.1)(age_group_count[which.max(age_group_count$n), 3]/100)`), natomiast najmniej liczną grupą jest `r age_group_count[which.min(age_group_count$n), 1]` - `r age_group_count[which.min(age_group_count$n), 2]` pacjentów (`r percent_format(accuracy = 0.1)(age_group_count[which.min(age_group_count$n), 3]/100)`).
 
 Statystyki dotyczące demografii pacjentów zostały również zwizualizowane na wykresach kołowych poniżej:
 
@@ -144,7 +144,7 @@ grid.arrange(age_demographics, gender_demographics, ncol=2)
 
 ### Hospitalizacja
 
-```{r treatment_duration, echo=FALSE}
+```{r treatment_duration_hours, echo=FALSE}
 treatment_parse <- function(durationHours) {
   reminderHours <- durationHours %% 24
   reminderMinutes <- (reminderHours %% 1) * 60
@@ -162,26 +162,26 @@ treatment_format <- function(duration) {
   c(days, hours, minutes, seconds)
 }
 
-min_duration <- treatment_format(min(patients$treatment_duration))
+min_duration <- treatment_format(min(patients$treatment_duration_hours))
 min_duration_string <- paste(min_duration[1], ":", min_duration[2], ":", min_duration[3], ":", min_duration[4], sep="")
 
-mean_duration <- treatment_format(mean(patients$treatment_duration))
+mean_duration <- treatment_format(mean(patients$treatment_duration_hours))
 mean_duration_string <- paste(mean_duration[1], ":", mean_duration[2], ":", mean_duration[3], ":", mean_duration[4], sep="")
 
-max_duration <- treatment_format(max(patients$treatment_duration))
+max_duration <- treatment_format(max(patients$treatment_duration_hours))
 max_duration_string <- paste(max_duration[1], ":", max_duration[2], ":", max_duration[3], ":", max_duration[4], sep="")
 ```
  
-Minimalnym czasem hospitalizacji był `r min_duration_string` (dni:godzin:minut:sekund), a maksymalnym - `r max_duration_string`. Średnim czasem jaki pacjenci spędzili w szpitalu był `r mean_duration_string`.
+Minimalnym czasem hospitalizacji był `r min_duration_string` (dd:hh:mm:ss), a maksymalnym - `r max_duration_string`. Średnim czasem jaki pacjenci spędzili w szpitalu był `r mean_duration_string`.
 
-```{r treatment_duration_by_age_group, echo=FALSE, fig.align="center"}
-treatment_duration_stats <- patients %>%
+```{r treatment_duration_hours_by_age_group, echo=FALSE, fig.align="center"}
+treatment_duration_hours_stats <- patients %>%
   group_by(age_group) %>%
-  summarise(Mean=mean(treatment_duration), Max=max(treatment_duration), Min=min(treatment_duration), Standard_deviation=sd(treatment_duration), .groups = "rowwise")
+  summarise(Mean=mean(treatment_duration_hours), Max=max(treatment_duration_hours), Min=min(treatment_duration_hours), Standard_deviation=sd(treatment_duration_hours), .groups = "rowwise")
 ```
 
-```{r treatment_duration_by_age_group_1, echo=FALSE, fig.align="center"}
-patients %>% ggplot(aes(x=age_group, y=treatment_duration, fill=age_group)) +
+```{r treatment_duration_hours_by_age_group_1, echo=FALSE, fig.align="center"}
+patients %>% ggplot(aes(x=age_group, y=treatment_duration_hours, fill=age_group)) +
   geom_boxplot(alpha=0.5) +
   theme_bw() +
   theme(legend.position="none") + 
@@ -196,7 +196,14 @@ patients %>% ggplot(aes(x=age_group, y=treatment_duration, fill=age_group)) +
 Pełna dystrybucja czasu hospitalizacja jest przedstawiona w tabeli poniżej:
 
 ```{r, echo=FALSE}
-treatment_duration_stats %>%
+convert_treatment_duration <- function(treatment_duration) {
+  ret <- treatment_format(treatment_duration)
+  paste(ret[1], ":", ret[2], ":", ret[3], ":", ret[4], sep="")
+  
+}
+
+treatment_duration_hours_stats %>%
+  mutate(Mean=convert_treatment_duration(Mean), Max=convert_treatment_duration(Max), Min=convert_treatment_duration(Min), Standard_deviation=convert_treatment_duration(Standard_deviation)) %>%
   kable() %>%
   kable_styling("bordered", full_width = F)
 ```
@@ -216,7 +223,7 @@ max_mortality_age_group <- colnames(mortality_by_age)[apply(mortality_by_age[2, 
 min_mortality_age_group <- colnames(mortality_by_age)[apply(mortality_by_age[2, ], 1, function(i) which(i == 0))]
 ```
 
-Bezwględna śmiertelność pacjentów ze zbioru danych wyniosła `r percent_format(accuracy = 0.1L)(mortality_by_age$All[2])`. 
+Bezwględna śmiertelność pacjentów ze zbioru danych wyniosła `r percent_format(accuracy = 0.1)(mortality_by_age$Combined[2])`. 
 
 Tabela z procentowo wyrażoną śmiertelnością w zależności od grupy wiekowej
 ```{r mortality_rate_table, echo=FALSE}
@@ -224,11 +231,11 @@ kable(mortality_by_age %>% adorn_pct_formatting(digits = 2)) %>%
   kable_styling("bordered", full_width = F)
 ```
 
-Najbardziej narażeni byli pacjenci z grupy wiekowej `r max_mortality_age_group`, których śmiertelność wyniosła `r percent_format(accuracy = 0.1L)(max_mortality)`, ale jest to również jedna z najmniej licznych grup pacjentów. 
+Najbardziej narażeni byli pacjenci z grupy wiekowej `r max_mortality_age_group`, których śmiertelność wyniosła `r percent_format(accuracy = 0.1)(max_mortality)`, ale jest to również jedna z najmniej licznych grup pacjentów. 
 
 Najmniej narażoną grupą byli pacjenci w wieku `r min_mortality_age_group`, u których nie zanotowano przypadków śmiertelnych.
 
-```{r survived_graph, echo=FALSE, fig.align='center'}
+```{r age_group_moratlity_graph, echo=FALSE, fig.align='center'}
 ggplot(data=patients, mapping=aes(x=age_group, fill=survived)) + 
   geom_bar(width=.5, position=position_dodge(width=.6), mapping=aes(group=survived)) +
   geom_text(stat='count', aes(label=..count..), position=position_dodge(width=0.6), vjust=-0.15) +
@@ -242,6 +249,27 @@ ggplot(data=patients, mapping=aes(x=age_group, fill=survived)) +
     )
 ```
 
-```{r}
-patients
+```{r treatment_duration_moratlity_graph, echo=FALSE, fig.align='center', fig.width=11}
+mortality_by_treatment_duration <- tabyl(patients, treatment_duration_days, survived) %>%
+  rowwise() %>%
+  mutate(
+    cases=as.numeric(yes+no),
+    mortality_rate=no/cases
+    ) %>%
+  arrange(treatment_duration_days)
+
+ggplot(data=mortality_by_treatment_duration, aes(x=treatment_duration_days, y=mortality_rate)) +
+  geom_point(aes(size=cases, color=cases)) +
+  geom_smooth(method = 'loess', formula = y ~ x) +
+  scale_x_continuous(breaks=seq(0, 35, 1)) +
+  scale_y_continuous(breaks=seq(0, 1, 0.2)) +
+  theme_bw() +
+  scale_size(guide = "legend") +
+  labs(
+    title="Śmiertelność pacjentów w zależności od długości hospitalizacji",
+    y="Śmiertelność",
+    x="Okres hospitalizacji [dni]",
+    color="Liczba pacjentów",
+    size=NULL
+  )
 ```
