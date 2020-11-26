@@ -29,7 +29,7 @@ url <- "http://www.cs.put.poznan.pl/dbrzezinski/teaching/zed/wuhan_blood_sample_
 
 Surowe dane zostały pobrane z adresu url (`r url`) bezpośrednio bez konieczności ręcznego pobierania zbioru danych w celu zapewnienia powtarzalności eksperymentów.
 
-```{r data_download}
+```{r data_download, results='hide'}
 GET(url, write_disk(data_file <- tempfile(fileext = ".xlsx")))
 raw_df <- read_excel(data_file) 
 ```
@@ -105,7 +105,7 @@ age_demographics <- ggplot(age_group_count, aes(x="", y=prop, fill=desc)) +
   theme_void() + 
   geom_text(aes(y = ypos, label = n), color = "white", size=3) + 
   labs(
-    title="Struktura plci pacjentów",
+    title="Struktura wieku pacjentów",
     fill="Grupa wiekowa"
   )
 
@@ -115,8 +115,9 @@ gender_demographics <- ggplot(gender_count, aes(x="", y=prop, fill=desc)) +
   coord_polar("y", start=0) +
   theme_void() +
   geom_text(aes(y = ypos, label = n), color = "white", size=6) +
+  scale_fill_brewer(palette = "Set1") +
   labs(
-    title="Struktura wieku pacjentów",
+    title="Struktura plci pacjentów",
     fill="Plec"
     )
 ```
@@ -140,7 +141,6 @@ Statystyki dotyczące demografii pacjentów zostały również zwizualizowane na
 ```{r, echo=FALSE, warning=FALSE, fig.align='center'}
 grid.arrange(age_demographics, gender_demographics, ncol=2)
 ```
-
 
 ### Hospitalizacja
 
@@ -177,15 +177,30 @@ Minimalnym czasem hospitalizacji był `r min_duration_string` (dni:godzin:minut:
 ```{r treatment_duration_by_age_group, echo=FALSE, fig.align="center"}
 treatment_duration_stats <- patients %>%
   group_by(age_group) %>%
-  summarise(Mean=mean(treatment_duration), Max=max(treatment_duration), Min=min(treatment_duration), Std=sd(treatment_duration), .groups = "rowwise")
-
-treatment_duration_stats %>% ggplot(aes(x=age_group, y=Mean, group=1)) +
-  geom_errorbar(aes(ymin=Mean-Std, ymax=Mean+Std), width=.1) +
-  geom_line() +
-  geom_point() +
-  scale_color_brewer(palette="Paired") +
-  theme_bw()
+  summarise(Mean=mean(treatment_duration), Max=max(treatment_duration), Min=min(treatment_duration), Standard_deviation=sd(treatment_duration), .groups = "rowwise")
 ```
+
+```{r treatment_duration_by_age_group_1, echo=FALSE, fig.align="center"}
+patients %>% ggplot(aes(x=age_group, y=treatment_duration, fill=age_group)) +
+  geom_boxplot(alpha=0.5) +
+  theme_bw() +
+  theme(legend.position="none") + 
+  scale_fill_brewer(palette = "Set1") + 
+  labs(
+    title="Wykaz czasu hospitalizacji pacjentów z podziałem na grupy wiekowe",
+    y="Długość hospitalizacji [h]",
+    x="Grupy wiekowe"
+    )
+```
+
+Pełna dystrybucja czasu hospitalizacja jest przedstawiona w tabeli poniżej:
+
+```{r, echo=FALSE}
+treatment_duration_stats %>%
+  kable() %>%
+  kable_styling("bordered", full_width = F)
+```
+
 
 ### Śmiertelność
 
@@ -217,11 +232,16 @@ Najmniej narażoną grupą byli pacjenci w wieku `r min_mortality_age_group`, u 
 ggplot(data=patients, mapping=aes(x=age_group, fill=survived)) + 
   geom_bar(width=.5, position=position_dodge(width=.6), mapping=aes(group=survived)) +
   geom_text(stat='count', aes(label=..count..), position=position_dodge(width=0.6), vjust=-0.15) +
-  theme_bw() + 
+  theme_bw() +
+  scale_fill_brewer(palette = "Set1") +
   labs(
     title="Wykaz rezultatów choroby pacjentów z podziałem na grupy wiekowe",
     y="Liczba pacjentów",
     x="Grupy wiekowe",
     fill="Survived"
     )
+```
+
+```{r}
+patients
 ```
