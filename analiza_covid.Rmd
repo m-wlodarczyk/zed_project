@@ -235,6 +235,8 @@ Najbardziej narażeni byli pacjenci z grupy wiekowej `r max_mortality_age_group`
 
 Najmniej narażoną grupą byli pacjenci w wieku `r min_mortality_age_group`, u których nie zanotowano przypadków śmiertelnych.
 
+Dodatkowo ze względu na małą reprezentację grupy wiekowej (10,20], tylko dwóch pacjentów - przypadek śmiertelny oraz ozdrowiciel, współczynnik śmiertelności (oraz przeżywalności) jest przekłamany.
+
 ```{r age_group_moratlity_graph, echo=FALSE, fig.align='center'}
 ggplot(data=patients, mapping=aes(x=age_group, fill=survived)) + 
   geom_bar(width=.5, position=position_dodge(width=.6), mapping=aes(group=survived)) +
