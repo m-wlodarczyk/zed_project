@@ -18,6 +18,12 @@ library(janitor)
 library(scales)
 library(kableExtra)
 library(qwraps2)
+library(rmarkdown)
+library(caret)
+library(reshape2)
+library(plotly)
+library(naniar)
+library(gganimate)
 ```
 
 
@@ -51,10 +57,10 @@ df <- raw_df %>%
   mutate(gender = ifelse(gender == 1, "male", "female"))
 ```
 
-## Czyszczenie zbioru danych
-
 ## Rozmiar danych
 Zbiór danych składa się z `r nrow(raw_df)` rekordów medycznych opisywanych przez `r ncol(raw_df)` atrybutów, z których pierwsze 7 odnosi się bezpośrednio do samego pacjenta (jego identyfikator, data przyjęcia do szpitala, wiek, ...), a pozostałe `r ncol(raw_df)-7` atrybuty zawierają informacje o wynikach przeprowadzonych badań.
+
+## Czyszczenie zbioru danych
 
 
 ## Pacjenci
@@ -88,6 +94,7 @@ age_group_count <- age_group_count %>%
   arrange(desc(age_group)) %>%
   mutate(prop=n/sum(age_group_count$n)*100) %>%
   mutate(ypos=ifelse(n >= 20, cumsum(prop)-0.5*prop, NA)) %>%
+#  mutate(ypos=ifelse(n >= 20, cumsum(prop)-0.5*prop, "")) %>%
   mutate(desc = paste(age_group, percent(prop/100), sep=" - "))
 
 gender_count <- tabyl(patients, gender) %>%
@@ -193,7 +200,7 @@ patients %>% ggplot(aes(x=age_group, y=treatment_duration_hours, fill=age_group)
     )
 ```
 
-Pełna dystrybucja czasu hospitalizacja jest przedstawiona w tabeli poniżej:
+Pełna dystrybucja czasu hospitalizacji jest przedstawiona w tabeli poniżej:
 
 ```{r, echo=FALSE}
 convert_treatment_duration <- function(treatment_duration) {
@@ -208,6 +215,30 @@ treatment_duration_hours_stats %>%
   kable_styling("bordered", full_width = F)
 ```
 
+### Liczba przeprowadzonych badań
+
+```{r test_per_patient_count, echo=FALSE, warning=FALSE,}
+patients_tests <- aggregate(cbind(tests_count=test_date)~patient_id,
+                            data=df,
+                            FUN=function(x){NROW(x)})
+patients <- merge(x=patients, y=patients_tests, by="patient_id") %>%
+  mutate(tests_freq=(tests_count/as.numeric(treatment_duration_hours))*24)
+```
+
+Pacjenci byli poddawani badaniom ze średnią częstotliwością `r mean(patients$tests_freq)`
+
+```{r tests_freq_plot, fig.align='center'}
+ggplot(data=patients, aes(x=age_group, y=tests_freq, fill=age_group)) +
+  geom_bar(stat="summary", fun="mean") + 
+  theme_bw() +
+  scale_fill_brewer(palette = "Set1") +
+  theme(legend.position = "none") +
+  labs(
+    title="Dzienna częstotliwość przeprowadzania badań",
+    x="Grupa wiekowa",
+    y="Częstotliwość badań"
+  )
+```
 
 ### Śmiertelność
 
@@ -275,3 +306,212 @@ ggplot(data=mortality_by_treatment_duration, aes(x=treatment_duration_days, y=mo
     size=NULL
   )
 ```
+
+## Biomarkery
+
+Pozostałe atrybuty zbioru danych (znajdujące się w kolumnach od 8 do 81) zawierają wyniki badań pacjentów. Podstawowe statystyki dotyczące biomarkerów znajdują się w tabeli poniżej:
+
+```{r biomarkers_stats, echo=FALSE}
+raw_biomarkers <- df[, c(8:81)]
+biomarkers <- data.frame(unclass(summary(df[,c(8:81)])), check.names = FALSE, stringsAsFactors = FALSE)
+paged_table(biomarkers, options=list(rows.print=15))
+```
+
+### Częstotliwość mierzonych czynników medycznych podczas badań pacjentów
+
+```{r most_frequent_biomarker, echo=FALSE}
+biomarker_count <- as.data.frame(t(as.matrix(raw_biomarkers)))
+
+biomarker_count$count <- rowSums(!is.na(biomarker_count))
+
+biomarker_count$name <- rownames(biomarker_count)
+
+biomarker_count <- biomarker_count %>% 
+  select(name, count)
+
+biomarker_count <- biomarker_count[order(biomarker_count$count),]
+
+rownames(biomarker_count) <- c()
+
+most_frequent_biomarkers <- biomarker_count[which(biomarker_count$count == max(biomarker_count$count)), 1]
+```
+
+Najczęściej mierzonymi czynnikami podczas przeprowadzonych badań były: liczba leukocytów (`r most_frequent_biomarkers[1]`) oraz liczba erytrocytów (`r most_frequent_biomarkers[2]`). 
+
+```{r biomarkers_frequency_tables, echo=FALSE}
+fewest_frequency <- head(biomarker_count) %>%
+  mutate(Percentage = percent_format(accuracy = 0.01)(count/nrow(df))) %>%
+  rename(
+    c(
+      Czynnik=name, 
+      "Liczba badań"=count, 
+      "% badań"=Percentage
+      )
+    )
+
+highest_frequency <- tail(biomarker_count) %>% 
+  map_df(rev) %>%
+  mutate(Percentage = percent_format(accuracy = 0.01)(count/nrow(df))) %>%
+  rename(
+    c(
+      Czynnik=name, 
+      "Liczba badań"=count, 
+      "% badań"=Percentage
+      )
+    )
+
+fewest_frequency %>%
+  kable(align="clc", caption="Najrzadziej sprawdzane czynniki medyczne wśród pacjentów") %>%
+  kable_styling("bordered", full_width=F, position="float_left")
+
+highest_frequency %>%
+  kable(align="clc", caption="Najczęściej sprawdzane czynniki medyczne wśród pacjentów") %>%
+  kable_styling("bordered", full_width=F, position="right")
+```
+
+### Korelacje atrybutów 
+
+Poniższa macierz zawiera wartości korelacji pomiędzy atrybutami biomedycznymi testowanych wśród pacjentów. Istnieje kilka korelacji pomiędzy atrybutami których wartość wynosi 1. Dzieje się tak ze względu na dwa czynniki: duża liczbę przeprowadzonych badań i mała oraz zmienna liczba sprawdzanych czynników podczas pojedynczego badania. Przykładowo korelacja czynników `hemoglobin` oraz `HCV antibody quantification` wynosi 1, ale liczba rekordów w jakich te dwa czynniki były wspólnie mierzone wynosi 2, przez co wartość ich korelacji może być błędnie zawyżona.
+
+```{r correlation_matrix_1, echo=FALSE, warning=FALSE, fig.width=10, fig.height=12}
+#zero_variance <- apply(raw_biomarkers, 2, function(x) length(unique(x))==1)
+#tmp_df <- raw_biomarkers[, !zero_variance]
+#n <- length(colnames(tmp_df))
+
+raw_biomarkers$row_count <- rowSums(!is.na(raw_biomarkers[]))
+corr_matrix <- cor(raw_biomarkers, use="pairwise.complete.obs")
+
+corr_dataframe <- data.frame(X=rownames(corr_matrix)[col(corr_matrix)], Y=colnames(corr_matrix)[row(corr_matrix)], corr=c(corr_matrix)) %>%
+  mutate(description=paste("x:", X, "\ny:", Y, "\ncorrelation:", corr))
+
+biomarkers_heatmap <- ggplot(data=corr_dataframe, aes(X, Y, fill=corr, text=description)) +
+  geom_tile() +
+  scale_fill_gradient(low="white", high="blue") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90),
+        axis.title.x = element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank())
+
+ggplotly(biomarkers_heatmap, tooltip="text")
+```
+
+### Najważniejsze atrybuty biomedyczne 
+
+W artykule powiązanym z analizowanym zbiorem danych - [Yan, L., Zhang, HT., Goncalves, J. et al. An interpretable mortality prediction model for COVID-19 patients](https://rdcu.be/cbs7T) - przedstawionych zostało 10 najważniejszych atrybutów zbioru danych na podstawie wyników modelu klasyfikatora Multi-tree XGBoost. Trzema najważniejszymi wyselekcjonowanymi cechami były (w kolejności malejącej ważności atrybutów): `Lactate dehydrogenase` (dehydrogenaza mleczanowa, LDH), `lymphocyte count` (liczba limfocytów) i `High sensitivity C-reactive protein` (wysoko czułe białko C-reaktywne, hs-CRP). 
+
+Poniżej przedstawiony został wykres, pochodzący z wymienionego [artykułu](https://rdcu.be/cbs7T), przedstawiający 10 najbardziej kluczowych atrybutów zbioru danych przy szacowaniu śmierelności pacjentów.
+```{r echo=FALSE, out.width='100%'}
+knitr::include_graphics('./assets/feature_relative_importance.png')
+```
+
+Autorzy m.in. poniższych publikacji: 
+
+* [Lactate dehydrogenase levels predict coronavirus disease 2019 (COVID-19) severity and mortality: A pooled analysis](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7251362/)
+* [Laboratory Parameters in Detection of COVID-19 Patients with Positive RT-PCR; a Diagnostic Accuracy Study](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7130449/)
+* [Lactate dehydrogenase, a Risk Factor of Severe COVID-19 Patients: A Retrospective and Observational Study](https://www.medrxiv.org/content/10.1101/2020.03.24.20040162v1)
+* [C-reactive protein levels in the early stage of COVID-19](https://www.sciencedirect.com/science/article/pii/S0399077X2030086X)
+* [Lymphopenia during the COVID-19 infection: What it shows and what can be learned](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7305732/)
+
+potwierdzają obserwacje, iż badanie poziomów: enzymu dehydrogenazy mleczanowej (LDH), wysokoczułego białka C-reaktywnego (hs-CRP) oraz liczby limfocytów pacjenta mogą służyć przy szacowaniu śmierelności/dotkliwości pojedynczych przypadków koronawirusa.
+
+```{r, echo=FALSE, warning=FALSE}
+ldh_tests <- df %>%
+  select(patient_id, survived, 'Lactate dehydrogenase') %>%
+  rename(
+    c(
+      LDH='Lactate dehydrogenase'
+      )
+    ) %>%
+  drop_na(LDH)%>% 
+  group_by(patient_id) %>%
+  mutate(test_performed=row_number(patient_id)) %>%
+  group_by(test_performed, survived) %>%
+  summarise(LDH=mean(LDH))
+
+hs_crp_tests <- df %>%
+  select(patient_id, survived, 'High sensitivity C-reactive protein') %>%
+  rename(
+    c(
+      hsCRP='High sensitivity C-reactive protein'
+      )
+    ) %>%
+  drop_na(hsCRP)%>% 
+  group_by(patient_id) %>%
+  mutate(test_performed=row_number(patient_id)) %>%
+  group_by(test_performed, survived) %>%
+  summarise(hsCRP=mean(hsCRP))
+  
+lymphocytes_tests <- df %>% 
+  select(patient_id, survived, 'lymphocyte count') %>%
+  rename(
+    c(
+      lymphocytes='lymphocyte count'
+      )
+    ) %>%
+  drop_na(lymphocytes) %>% 
+  group_by(patient_id) %>%
+  mutate(test_performed=row_number(patient_id)) %>%
+  group_by(test_performed, survived) %>%
+  summarise(lymphocytes=mean(lymphocytes))
+
+
+ldh_animated_plot <- ldh_tests %>%
+  ggplot(aes(x=test_performed, y=LDH, group=survived, color=survived)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    title="Zmienność poziomu enzymu dehydrogenazy mleczanowej (LDH)", 
+    y="Poziom LDH", 
+    x="Kolejne testy uwzględnieniające badanie poziomu LDH", 
+    color="Pacjent wyzdrowiał"
+    ) +
+  theme_bw() +
+  scale_x_continuous(breaks=seq(0, 14, 1)) +
+  transition_reveal(test_performed)
+
+hs_crp_animated_plot <- hs_crp_tests %>%
+  ggplot(aes(x=test_performed, y=hsCRP, group=survived, color=survived)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    title="Zmienność poziomu wysokoczułego białka C-reaktywnego (hs-CRP)", 
+    y="Poziom hs-CRP", 
+    x="Kolejne testy uwzględnieniające badanie poziomu hs-CRP", 
+    color="Pacjent wyzdrowiał"
+    ) +
+  theme_bw() +
+  scale_x_continuous(breaks=seq(0, 10, 1)) +
+  transition_reveal(test_performed)
+
+lymphocytes_animated_plot <- lymphocytes_tests %>%
+  ggplot(aes(x=test_performed, y=lymphocytes, group=survived, color=survived)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    title="Zmienność poziomu limfocytów", 
+    y="Poziom limfocytów", 
+    x="Kolejne testy uwzględnieniające badanie poziomu limfocytów", 
+    color="Pacjent przeżył"
+    ) +
+  theme_bw() +
+  scale_x_continuous(breaks=seq(0, 12, 1)) +
+  transition_reveal(test_performed)
+
+#anim_save("LDH.gif", ldh_animated_plot)
+#anim_save("hs-CRP.gif", hs_crp_animated_plot)
+#anim_save("lymphocytes.gif", lymphocytes_animated_plot)
+```
+
+#### Dehydrogenaza mleczanowa (LDH)
+
+![](./LDH.gif)
+
+#### Wysokoczułe białko C-reaktywne (hs-CRP)
+
+![](./hs-CRP.gif)
+
+#### Limfocyty
+
+![](./lymphocytes.gif)
