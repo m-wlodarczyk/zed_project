@@ -1,0 +1,16 @@
+---
+title: "ZED Projekt"
+author: "Michał Włodarczyk"
+date: "17 11 2020"
+output: html_document
+---
+
+```{r}
+library("xlsx")
+```
+
+```{r}
+url <- "http://www.cs.put.poznan.pl/dbrzezinski/teaching/zed/wuhan_blood_sample_data_Jan_Feb_2020.xlsx"
+raw_data <- read.xlsx(xlsxFile = url, sheet=1)
+head(raw_data)
+```
