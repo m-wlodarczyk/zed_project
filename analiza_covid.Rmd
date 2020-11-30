@@ -8,6 +8,9 @@ output:
     toc_float: yes
 ---
 
+# Executive summary
+
+Niniejszy raport zawiera analizę danych pacjentów chorych na koronawirusa przyjętych do szpitala Tongji w Wuhan na przełomie stycznia i lutego 2020 roku.  W raporcie uwględnione zostały analizy wraz z wykresami przedstawiające zależności pomiędzy różnymi cechami pacjentów a śmiertelnością. Analizowanymi atrybutami były między innymi: dane demograficzne pacjentów (płeć, wiek, etc.) oraz dane medyczne pacjentów powstałe w wyniku wykonanych na nich badaniach krwi. W raporcie przedstawione zostały również korelacje pomiędzy różnymi biomarkerami oraz dołączone zostały wykresy zmienności najbardziej kluczowych atrybutów na przestrzeni kolejnych badań. W ostatnim rozdziale raportu stworzony został klasyfikator dokonujący predykcji śmiertelności pacjenta zakażonego koronawirusem. Dokładność opisanego klasyfikatora osiągnęła poziom 96.55%.
 
 # Wykorzystane biblioteki
 ```{r libraries, message=FALSE}
@@ -28,7 +31,6 @@ library(plotly)
 library(naniar)
 library(gganimate)
 ```
-
 
 # Wczytywanie danych
 
@@ -500,26 +502,26 @@ lymphocytes_animated_plot <- lymphocytes_tests %>%
   scale_x_continuous(breaks=seq(0, 12, 1)) +
   transition_reveal(test_performed)
 
-#anim_save("LDH.gif", ldh_animated_plot)
-#anim_save("hs-CRP.gif", hs_crp_animated_plot)
-#anim_save("lymphocytes.gif", lymphocytes_animated_plot)
+#anim_save("assets/LDH.gif", ldh_animated_plot)
+#anim_save("assets/hs-CRP.gif", hs_crp_animated_plot)
+#anim_save("assets/lymphocytes.gif", lymphocytes_animated_plot)
 ```
 
 #### Dehydrogenaza mleczanowa (LDH)
 
-![](./LDH.gif)
+![](./assets/LDH.gif)
 
 #### Wysokoczułe białko C-reaktywne (hs-CRP)
 
-![](./hs-CRP.gif)
+![](./assets/hs-CRP.gif)
 
 #### Limfocyty
 
-![](./lymphocytes.gif)
+![](./assets/lymphocytes.gif)
 
 # Klasyfikacja
 
-Na podstawie opisanej wyżej oceny ważności atrybutów, wybranymi atrybutami do przygotowania modelu klasyfikacji zostały: `Lactate dehydrogenase` (dehydrogenaza mleczanowa, LDH), `lymphocyte count` (liczba limfocytów) i `High sensitivity C-reactive protein` (wysoko czułe białko C-reaktywne, hs-CRP).
+Na podstawie opisanej wyżej oceny ważności atrybutów, wybranymi atrybutami do przygotowania modelu klasyfikacji zostały: `Lactate dehydrogenase` (dehydrogenaza mleczanowa, LDH), `lymphocyte count` (liczba limfocytów) i `High sensitivity C-reactive protein` (wysoko czułe białko C-reaktywne, hs-CRP). Dodatkowo wybrany został również wiek pacjenta do zestawu wyżej wymienionych atrybutów.
 
 ## Czyszczenie i przygotowanie zbioru danych do klasyfikacji
 
@@ -540,8 +542,8 @@ Ze względu na dużą liczbę badań oraz na to, że nie każde badanie zawiera�
 
 ```{r patients_key_features, echo=FALSE}
 patients_results <- df %>%
-  select(patient_id, survived, 'Lactate dehydrogenase', 'lymphocyte count', 'High sensitivity C-reactive protein') %>%
-  group_by(patient_id, survived) %>%
+  select(patient_id, age, survived, 'Lactate dehydrogenase', 'lymphocyte count', 'High sensitivity C-reactive protein') %>%
+  group_by(patient_id, age, survived) %>%
   summarise_at(c('Lactate dehydrogenase', 'High sensitivity C-reactive protein', 'lymphocyte count'), mean, na.rm=TRUE) %>%
   rename(
     c(
@@ -551,7 +553,7 @@ patients_results <- df %>%
       )
     ) %>%
   ungroup() %>%
-  select(survived, LDH, hsCRP, lymphocytes)
+  select(survived, age, LDH, hsCRP, lymphocytes)
 
 patients_results <- na.omit(patients_results)
 patients_results$survived <- as.factor(patients_results$survived)
