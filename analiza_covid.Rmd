@@ -42,6 +42,7 @@ raw_df <- read_excel(data_file)
 
 
 # Przetwarzanie zbioru danych
+
 ```{r data_cleanup, echo=FALSE}
 df <- raw_df %>% 
   rename(
@@ -60,9 +61,6 @@ df <- raw_df %>%
 ## Rozmiar danych
 Zbiór danych składa się z `r nrow(raw_df)` rekordów medycznych opisywanych przez `r ncol(raw_df)` atrybutów, z których pierwsze 7 odnosi się bezpośrednio do samego pacjenta (jego identyfikator, data przyjęcia do szpitala, wiek, ...), a pozostałe `r ncol(raw_df)-7` atrybuty zawierają informacje o wynikach przeprowadzonych badań.
 
-## Czyszczenie zbioru danych
-
-
 ## Pacjenci
 ```{r patients, echo=FALSE}
 patients <- distinct(
@@ -77,7 +75,7 @@ Zbiór danych zawiera informacje o `r nrow(patients)` pacjentach, u których stw
 
 ### Atrybuty główne - informacje o pacjentach
 
-* patient_id (PATIENT_ID) - unikalny identyfikator przypisany do każdego pacjenta
+* patient_id (PATIENT_ID) - unikalny identyfikator przypisany do każdego pacjenta, 
 * test_date (RE_DATE) - pole, którego znaczenie w dokumentacji zbioru nie jest jednoznacznie opisane, ale na podstawie pozostałych atrybutów zbioru można wyprowadzić, że jest to data wykonania badania
 * age - wiek pacjenta
 * gender - płeć pacjenta, przyjmuje wartości 1 lub 2, gdzie 1 oznacza mężczyznę, a 2 kobietę. Przypisane wartości do płci nie było jawnie udokumentowane, natomiast poprawną identyfikację umożliwiały dopiero opublikowane statystyki zbioru.
@@ -225,11 +223,11 @@ patients <- merge(x=patients, y=patients_tests, by="patient_id") %>%
   mutate(tests_freq=(tests_count/as.numeric(treatment_duration_hours))*24)
 ```
 
-Pacjenci byli poddawani badaniom ze średnią częstotliwością `r mean(patients$tests_freq)`
+Pacjenci byli poddawani badaniom ze średnią częstotliwością `r round(mean(patients$tests_freq), digits=2)` badania na dzień. Największą ilością przeprowadzonych badań podczas pobytu pacjenta w szpitalu było - `r max(patients_tests$tests_count)`, natomiast najmniejszą - `r min(patients_tests$tests_count)`.
 
-```{r tests_freq_plot, fig.align='center'}
-ggplot(data=patients, aes(x=age_group, y=tests_freq, fill=age_group)) +
-  geom_bar(stat="summary", fun="mean") + 
+```{r tests_freq_plot, echo=FALSE, fig.align='center'}
+ggplot(data=patients, aes(x=reorder(age_group, -tests_freq), y=tests_freq, fill=age_group)) +
+  geom_bar(stat="summary",  fun="mean") + 
   theme_bw() +
   scale_fill_brewer(palette = "Set1") +
   theme(legend.position = "none") +
@@ -428,7 +426,7 @@ ldh_tests <- df %>%
   group_by(patient_id) %>%
   mutate(test_performed=row_number(patient_id)) %>%
   group_by(test_performed, survived) %>%
-  summarise(LDH=mean(LDH))
+  summarise(LDH=mean(LDH), .groups = "rowwise")
 
 hs_crp_tests <- df %>%
   select(patient_id, survived, 'High sensitivity C-reactive protein') %>%
@@ -441,7 +439,7 @@ hs_crp_tests <- df %>%
   group_by(patient_id) %>%
   mutate(test_performed=row_number(patient_id)) %>%
   group_by(test_performed, survived) %>%
-  summarise(hsCRP=mean(hsCRP))
+  summarise(hsCRP=mean(hsCRP), .groups = "rowwise")
   
 lymphocytes_tests <- df %>% 
   select(patient_id, survived, 'lymphocyte count') %>%
@@ -454,7 +452,7 @@ lymphocytes_tests <- df %>%
   group_by(patient_id) %>%
   mutate(test_performed=row_number(patient_id)) %>%
   group_by(test_performed, survived) %>%
-  summarise(lymphocytes=mean(lymphocytes))
+  summarise(lymphocytes=mean(lymphocytes), .groups = "rowwise")
 
 
 ldh_animated_plot <- ldh_tests %>%
@@ -515,3 +513,145 @@ lymphocytes_animated_plot <- lymphocytes_tests %>%
 #### Limfocyty
 
 ![](./lymphocytes.gif)
+
+# Klasyfikacja
+
+Na podstawie opisanej wyżej oceny ważności atrybutów, wybranymi atrybutami do przygotowania modelu klasyfikacji zostały: `Lactate dehydrogenase` (dehydrogenaza mleczanowa, LDH), `lymphocyte count` (liczba limfocytów) i `High sensitivity C-reactive protein` (wysoko czułe białko C-reaktywne, hs-CRP).
+
+## Czyszczenie i przygotowanie zbioru danych do klasyfikacji
+
+```{r removing_corrupted_rows, echo=FALSE}
+rows_before <- nrow(df)
+
+df <- df %>%
+  filter(!is.na(test_date))
+
+rows_after <- nrow(df)
+```
+
+W zbiorze danych występują uszkodzone rekordy - są to wiersze, w których nie ma żadnych wyników badań pacjentów oraz brakuje daty wykonania badania (kolumna `test_date`, `RE_DATE` w nieprzetworzonym zbiorze danych). Rekordy uszkodzone zostały usunięte w przetwożonym zbiorze danych.
+
+Liczba rekordów przed usunięciem - `r rows_before`, liczba rekordów po usunięciu - `r rows_after`.
+
+Ze względu na dużą liczbę badań oraz na to, że nie każde badanie zawierało taki sam zestaw mierzonych czynników zbiór danych został pogrupowany ze względu na pacjentów, a wartości parametrów: LDH, limfocyty i hs-CRP zostały wypełnione średnimi zmierzonymi wartościami niniejszych atrybutów dla poszczególnych pacjentów.
+
+```{r patients_key_features, echo=FALSE}
+patients_results <- df %>%
+  select(patient_id, survived, 'Lactate dehydrogenase', 'lymphocyte count', 'High sensitivity C-reactive protein') %>%
+  group_by(patient_id, survived) %>%
+  summarise_at(c('Lactate dehydrogenase', 'High sensitivity C-reactive protein', 'lymphocyte count'), mean, na.rm=TRUE) %>%
+  rename(
+    c(
+      LDH='Lactate dehydrogenase',
+      hsCRP='High sensitivity C-reactive protein',
+      lymphocytes='lymphocyte count'
+      )
+    ) %>%
+  ungroup() %>%
+  select(survived, LDH, hsCRP, lymphocytes)
+
+patients_results <- na.omit(patients_results)
+patients_results$survived <- as.factor(patients_results$survived)
+```
+
+## Podział zbioru danych
+
+```{r seed, echo=FALSE, warning=FALSE}
+set.seed(23)
+```
+
+Zbiór danych został podzielony w proporcji 75% danych przydzielonych do zbioru uczącego (parametr `p`), natomiast podanym atrybutem do stratyfikacji (parametr `y`) był atrybut decyzyjny `survived`.
+
+```{r data_split, warning=FALSE}
+inTraining <- createDataPartition(
+        y = patients_results$survived,
+        p = .75,
+        list = FALSE)
+
+```
+
+```{r train_test_datasets, echo=FALSE, warning=FALSE}
+training <- patients_results[ inTraining,]
+testing  <- patients_results[-inTraining,]
+```
+
+## Model klasyfikacyjny
+
+Dane zostały poddane powtarzanej kroswalidacji oraz podany został zakres parametru `mtry` którego wartości będą służyły do optymalizowania klasyfikatora.
+
+```{r cross_validation, warning=FALSE}
+rfGrid <- expand.grid(mtry = 10:30)
+
+gridCtrl <- trainControl(
+    method = "repeatedcv",
+    summaryFunction = twoClassSummary,
+    classProbs = TRUE,
+    number = 10,
+    repeats = 5)
+```
+
+Wybranym modelem klasyfikatora wykorzystywanym do predykcji śmiertelności pacjentów został Random Forest. Wartość parametru `mtry`=29 została dobrana automatycznie podczas procesu uczenia.
+
+```{r rf_model, warning=FALSE}
+set.seed(23)
+fitTune <- train(survived ~ .,
+             data = training,
+             method = "rf",
+             metric = "ROC",
+             preProc = c("center", "scale"),
+             trControl = gridCtrl,
+             tuneGrid = rfGrid,
+             ntree = 10)
+
+fitTune
+```
+
+## Predykcja
+
+```{r prediction_confusion_matrix, echo=FALSE}
+rfTuneClasses <- predict(fitTune, newdata = testing)
+confussion_matrix <- confusionMatrix(data = rfTuneClasses, testing$survived)
+
+model_accuracy <- percent_format(accuracy=0.01)(confussion_matrix$overall[[1]])
+kappa_score <- percent_format(accuracy=0.01)(confussion_matrix$overall[[2]])
+```
+
+### Macierz pomyłek
+
+```{r false_positives_negatives, echo=FALSE}
+false_positive_rate <- confussion_matrix$table[1, 2]/(confussion_matrix$table[1, 1]+confussion_matrix$table[1, 2])
+false_negative_rate <- confussion_matrix$table[2, 2]/(confussion_matrix$table[2, 1]+confussion_matrix$table[2, 2])
+```
+
+Poniżej przedstawiona została macierz pomyłek wygenerowana dla wyuczonego klasyfikatora. Miara `false positive` dla tego klasyfikatora wynosi - `r false_positive_rate`, a miara `false negative` wynosi - `r false_negative_rate`
+
+```{r confussion_matrix, echo=FALSE}
+kable(confussion_matrix$table) %>%
+  kable_styling("bordered", full_width = F)
+```
+
+### Miary klasyfikatora
+
+Dokładność klasyfikatora wynosi - `r model_accuracy`, a natomiast miara Kappa przyjmuje wartość - `r kappa_score`.
+
+```{r model_scores, echo=FALSE, fig.align='center'}
+scores_df <- as.data.frame(confussion_matrix$byClass) %>%
+  rename(c(score="confussion_matrix$byClass"))
+scores_df$name <- rownames(scores_df)
+
+scores_df %>% 
+  ggplot(aes(x=reorder(name, score), y=score)) +
+  geom_bar(stat='identity', fill="blue") + 
+  coord_flip() + 
+  theme_bw() + 
+  labs(
+    title="Jakość klasyfikatora",
+    x="Miary oceny klasyfikatora "
+  )
+```
+Szczegółowe wartości przedstawione są w tabeli poniżej:
+`r kable(scores_df %>% select(score)) %>% kable_styling("bordered", full_width = F)`
+
+```{r, echo=FALSE, fig.align='center'}
+ggplot(fitTune) + theme_bw()
+```
