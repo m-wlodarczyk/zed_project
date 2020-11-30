@@ -1,8 +1,11 @@
 ---
-title: "analiza_covid"
+title: "Analiza próbek krwi pacjentów chorych na COVID-19"
 author: "Michał Włodarczyk"
-date: "11/18/2020"
-output: html_document
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    toc: yes
+    toc_float: yes
 ---
 
 
